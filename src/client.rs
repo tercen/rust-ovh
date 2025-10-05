@@ -282,7 +282,7 @@ impl OvhClient {
         Ok(resp)
     }
 
-    /// Performs a POST request.
+    /// Performs a PUT request.
     pub async fn put<T: Serialize + ?Sized>(
         &self,
         path: &str,
