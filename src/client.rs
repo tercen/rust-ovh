@@ -50,13 +50,13 @@ impl From<serde_json::Error> for Error {
 // Private data
 
 static ENDPOINTS: phf::Map<&'static str, &'static str> = phf::phf_map! {
-    "ovh-eu" => "https://eu.api.ovh.com/v1",
-    "ovh-us" => "https://api.us.ovhcloud.com/v1",
-    "ovh-ca" => "https://ca.api.ovh.com/v1",
-    "kimsufi-eu" => "https://eu.api.kimsufi.com/v1",
-    "kimsufi-ca" => "https://ca.api.kimsufi.com/v1",
-    "soyoustart-eu" => "https://eu.api.soyoustart.com/v1",
-    "soyoustart-ca" => "https://ca.api.soyoustart.com/v1",
+    "ovh-eu" => "https://eu.api.ovh.com/1.0",
+    "ovh-us" => "https://api.us.ovhcloud.com/1.0",
+    "ovh-ca" => "https://ca.api.ovh.com/1.0",
+    "kimsufi-eu" => "https://eu.api.kimsufi.com/1.0",
+    "kimsufi-ca" => "https://ca.api.kimsufi.com/1.0",
+    "soyoustart-eu" => "https://eu.api.soyoustart.com/1.0",
+    "soyoustart-ca" => "https://ca.api.soyoustart.com/1.0",
 };
 
 // Private helpers
@@ -268,7 +268,34 @@ impl OvhClient {
         // Cannot call RequestBuilder.json directly because of body
         // signature requirement.
         let body = serde_json::to_string(data)?;
-        let headers = self.gen_headers(&url, "POST", &body).await?;
+        let mut headers = self.gen_headers(&url, "POST", &body).await?;
+
+        headers.insert("Content-type", "application/json".parse().unwrap());
+
+        let resp = self
+            .client
+            .post(url)
+            .headers(headers)
+            .body(body)
+            .send()
+            .await?;
+        Ok(resp)
+    }
+
+    /// Performs a POST request.
+    pub async fn put<T: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        data: &T,
+    ) -> Result<Response> {
+        let url = self.url(path);
+
+        // Cannot call RequestBuilder.json directly because of body
+        // signature requirement.
+        let body = serde_json::to_string(data)?;
+        let mut headers = self.gen_headers(&url, "PUT", &body).await?;
+
+        headers.insert("Content-type", "application/json".parse().unwrap());
 
         let resp = self
             .client
