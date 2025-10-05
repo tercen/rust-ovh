@@ -8,6 +8,44 @@ use std::{
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+use std::num::{ParseIntError, TryFromIntError};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Config: {0}")]
+    ConfigError(String),
+    #[error("OVH error: {0}")]
+    Error(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+type Result<T> = std::result::Result<T, Error>;
+
+impl From<reqwest::Error> for Error {
+    fn from(value: reqwest::Error) -> Self {
+        Error::Error(value.into())
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(value: ParseIntError) -> Self {
+        Error::Error(value.into())
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(value: TryFromIntError) -> Self {
+        Error::Error(value.into())
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Error::Error(value.into())
+    }
+}
+
+
+
 
 // Private data
 
@@ -107,25 +145,26 @@ impl OvhClient {
     /// ; with a single consumer key.
     /// ;consumer_key=my_consumer_key
     /// ```
-    pub fn from_conf<T>(path: T) -> Result<Self, Box<dyn std::error::Error>>
+    pub fn from_conf<T>(path: T) -> Result<Self>
     where
         T: AsRef<Path>,
     {
         let mut conf = Ini::new();
-        conf.load(path)?;
+        conf.load(path).map_err(|e| Error::ConfigError(e.to_string()))?;
 
         let endpoint = conf
             .get("default", "endpoint")
-            .ok_or("missing key `endpoint`")?;
+            .ok_or(Error::ConfigError("missing key `endpoint`".to_string()) )?;
+
         let application_key = conf
             .get(&endpoint, "application_key")
-            .ok_or("missing key `application_key`")?;
+            .ok_or(Error::ConfigError("missing key `application_key`".to_string()))?;
         let application_secret = conf
             .get(&endpoint, "application_secret")
-            .ok_or("missing key `application_secret`")?;
+            .ok_or(Error::ConfigError("missing key `application_secret`".to_string()))?;
         let consumer_key = conf
             .get(&endpoint, "consumer_key")
-            .ok_or("missing key `consumer_key`")?;
+            .ok_or(Error::ConfigError("missing key `consumer_key`".to_string()))?;
 
         let c = Self::new(
             &endpoint,
@@ -133,7 +172,7 @@ impl OvhClient {
             &application_secret,
             &consumer_key,
         )
-        .ok_or("failed to create client")?;
+        .ok_or(Error::ConfigError("failed to create client".to_string()))?;
 
         Ok(c)
     }
@@ -160,7 +199,7 @@ impl OvhClient {
     /// This method will perform a request to the API server to get its
     /// local time, and then subtract it from the local time of the machine.
     /// The result is a time delta value, is seconds.
-    pub async fn time_delta(&self) -> Result<i64, Box<dyn std::error::Error>> {
+    pub async fn time_delta(&self) -> Result<i64> {
         let server_time: u64 = self.get_noauth("/auth/time").await?.text().await?.parse()?;
         let delta = (now() - server_time).try_into()?;
         Ok(delta)
@@ -180,7 +219,7 @@ impl OvhClient {
         url: &str,
         method: &str,
         body: &str,
-    ) -> Result<HeaderMap, Box<dyn std::error::Error>> {
+    ) -> Result<HeaderMap> {
         let mut headers = self.default_headers();
 
         let time_delta = self.time_delta().await?;
@@ -198,7 +237,7 @@ impl OvhClient {
     }
 
     /// Performs a GET request.
-    pub async fn get(&self, path: &str) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+    pub async fn get(&self, path: &str) -> Result<reqwest::Response> {
         let url = self.url(path);
         let headers = self.gen_headers(&url, "GET", "").await?;
 
@@ -210,7 +249,7 @@ impl OvhClient {
     pub async fn delete(
         &self,
         path: &str,
-    ) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+    ) -> Result<reqwest::Response> {
         let url = self.url(path);
         let headers = self.gen_headers(&url, "DELETE", "").await?;
 
@@ -223,7 +262,7 @@ impl OvhClient {
         &self,
         path: &str,
         data: &T,
-    ) -> Result<Response, Box<dyn std::error::Error>> {
+    ) -> Result<Response> {
         let url = self.url(path);
 
         // Cannot call RequestBuilder.json directly because of body
@@ -245,7 +284,7 @@ impl OvhClient {
     pub async fn get_noauth(
         &self,
         path: &str,
-    ) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+    ) -> Result<reqwest::Response> {
         let url = self.url(path);
         let headers = self.default_headers();
 
